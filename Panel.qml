@@ -16,10 +16,13 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
 
-  readonly property var svc: bar && bar.shell ? bar.shell.serviceFor("danyakmallun.warp") : null
+  // Injected by BarWidget: a BarState reading the service through its IPC.
+  property var svc: null
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property color alertColor: bar ? bar.urgent : Color.urgent
+  // Cloudflare orange, shared with the bar widget so "on" reads the same.
+  readonly property color connectedColor: "#f38020"
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property string state: svc ? svc.state : "probing"
@@ -29,12 +32,8 @@ Panel {
   readonly property color stateColor: Model.stateIsAlert(state)
     ? alertColor
     : (svc && svc.active ? foreground : dim)
-  readonly property string heroDetail: {
-    if (!svc) return ""
-    if (svc.registered) return svc.accountText
-    if (svc.state === "disconnected" && svc.reasonText !== "") return svc.reasonText
-    return ""
-  }
+  readonly property string healthText: svc ? Model.healthText(svc.state, svc.reasonText) : ""
+  readonly property string modeHint: svc ? Model.modeHint(svc.mode) : ""
 
   // One line explaining why WARP is not doing what the toggle says.
   readonly property string notice: {
@@ -135,9 +134,9 @@ Panel {
     owner: root.hostWidget || root
     bar: root.bar
     open: root.opened
-    centerOnBar: true
+    centerOnBar: false
     focusTarget: catcher
-    contentWidth: popup.fittedContentWidth(Style.space(360))
+    contentWidth: popup.fittedContentWidth(Style.space(420))
     contentHeight: popup.fittedContentHeight(body.implicitHeight, Style.space(620))
 
     PanelKeyCatcher {
@@ -172,8 +171,8 @@ Panel {
             foreground: root.foreground
             fontFamily: root.fontFamily
             title: root.svc ? root.svc.statusText : "Checking…"
-            meta: "Cloudflare WARP"
-            detail: root.heroDetail
+            meta: root.svc && root.svc.detailText !== "" ? root.svc.detailText : "Cloudflare WARP"
+            iconOpacity: root.svc && root.svc.active ? 1.0 : 0.6
 
             iconComponent: Component {
               Text {
@@ -182,25 +181,74 @@ Panel {
                 color: root.stateColor
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.display
+
+                Behavior on color { ColorAnimation { duration: Style.duration(160) } }
+
+                SequentialAnimation on opacity {
+                  running: Model.stateIsTransitional(root.state) && !Style.reduceMotion
+                  loops: Animation.Infinite
+                  NumberAnimation { to: 0.5; duration: Style.duration(260); easing.type: Easing.OutCubic }
+                  NumberAnimation { to: 1.0; duration: Style.duration(260); easing.type: Easing.OutCubic }
+                }
               }
             }
 
             trailingControl: Component {
-              ToggleSwitch {
-                checked: root.svc ? root.svc.active === true : false
-                busy: root.busy || !root.canAct
-                foreground: root.foreground
-                onToggled: if (root.svc && root.canAct) root.svc.toggle()
+              RowLayout {
+                spacing: Style.space(10)
+
+                // Plan pill lives beside the switch so both share one
+                // vertical center instead of following the hero's two-line
+                // label stack.
+                BorderSurface {
+                  id: planPill
+                  visible: planText.text !== ""
+                  implicitWidth: planText.implicitWidth + Style.space(10)
+                  implicitHeight: planText.implicitHeight + Style.space(4)
+                  color: "transparent"
+                  borderSpec: Border.controlSpec("normal", root.foreground, root.foreground)
+                  radius: Style.cornerRadius
+                  Layout.alignment: Qt.AlignVCenter
+
+                  Text {
+                    id: planText
+                    anchors.centerIn: parent
+                    textFormat: Text.PlainText
+                    text: root.svc ? root.svc.accountText : ""
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    font.bold: true
+                  }
+                }
+
+                ToggleSwitch {
+                  id: powerSwitch
+                  checked: root.svc ? root.svc.active === true : false
+                  busy: root.busy || !root.canAct
+                  foreground: root.foreground
+                  Layout.alignment: Qt.AlignVCenter
+                  onToggled: if (root.svc && root.canAct) root.svc.toggle()
+
+                  PanelToolTip {
+                    visible: powerSwitch.containsMouse
+                    text: root.svc && root.svc.active ? "Disconnect WARP" : "Connect WARP"
+                    fontFamily: root.fontFamily
+                  }
+                }
               }
             }
           }
 
           NoticeRow {
-            visible: root.notice !== ""
+            opacity: root.notice !== "" ? 1 : 0
+            visible: opacity > 0
             text: root.notice
             foreground: root.foreground
             color: root.noticeAlarming ? root.alertColor : root.dim
             fontFamily: root.fontFamily
+
+            Behavior on opacity { NumberAnimation { duration: Style.duration(180); easing.type: Easing.OutCubic } }
           }
 
           // ── Session facts ────────────────────────────────────────────
@@ -220,6 +268,15 @@ Panel {
             visible: root.canAct
             label: "Protocol"
             value: root.svc ? Model.protocolLabel(root.svc.protocol) : ""
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          InfoRow {
+            visible: root.canAct && root.healthText !== ""
+            label: "Network"
+            value: root.healthText
+            valueColor: root.healthText === "Healthy" ? root.foreground : root.dim
             foreground: root.foreground
             fontFamily: root.fontFamily
           }
@@ -267,39 +324,46 @@ Panel {
           }
 
           Text {
-            visible: root.canAct
+            visible: root.canAct && root.modeHint !== ""
             textFormat: Text.PlainText
             width: parent.width
-            text: root.svc ? Model.modeHint(root.svc.mode) : ""
+            text: root.modeHint
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             wrapMode: Text.WordWrap
           }
 
-          GridLayout {
+          Repeater {
             visible: root.canAct
-            width: parent.width
-            columns: 2
-            columnSpacing: Style.space(6)
-            rowSpacing: Style.space(6)
-            Layout.alignment: Qt.AlignLeft
+            model: Model.modeGroups()
 
-            Repeater {
-              model: Model.modeOptions()
+            delegate: Column {
+              required property var modelData
+              width: parent.width
+              spacing: Style.space(5)
 
-              delegate: Button {
-                required property var modelData
+              Text {
+                textFormat: Text.PlainText
+                text: modelData.title
+                color: Qt.darker(root.foreground, 1.5)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                font.letterSpacing: 1
+              }
 
-                Layout.fillWidth: true
-                text: modelData.label
-                tooltipText: modelData.hint
-                fontSize: Style.font.bodySmall
+              ButtonGroup {
+                width: parent.width
+                options: modelData.options
+                value: root.svc ? root.svc.mode : ""
                 foreground: root.foreground
+                accent: root.connectedColor
                 fontFamily: root.fontFamily
-                selected: root.svc ? root.svc.mode === modelData.value : false
-                enabled: root.canAct && !root.busy && (!root.svc || root.svc.mode !== modelData.value)
-                onClicked: if (root.svc) root.svc.setMode(modelData.value)
+                fontSize: Style.font.bodySmall
+                focusable: false
+                enabled: root.canAct && !root.busy
+                onChanged: function(v) { if (root.svc) root.svc.setMode(v) }
               }
             }
           }
@@ -360,16 +424,6 @@ Panel {
             Item {
               Layout.fillWidth: true
               height: 1
-            }
-
-            Text {
-              textFormat: Text.PlainText
-              Layout.alignment: Qt.AlignVCenter
-              text: root.svc ? root.svc.detailText : ""
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              elide: Text.ElideRight
             }
           }
         }

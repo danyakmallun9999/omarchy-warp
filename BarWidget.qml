@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -15,15 +16,25 @@ BarWidget {
 
   moduleName: "danyakmallun.warp"
 
-  readonly property var svc: bar && bar.shell ? bar.shell.serviceFor("danyakmallun.warp") : null
+  // A replacement bar hands its widgets a service-less facade, so
+  // bar.shell.serviceFor() is null there. Read the plugin's own service
+  // through its IPC surface instead.
+  readonly property var svc: warpState
   readonly property string state: svc ? svc.state : "probing"
+
+  BarState {
+    id: warpState
+    settings: root.settings
+  }
   readonly property bool connected: svc ? svc.active === true : false
   readonly property bool spinning: svc ? svc.busy === true : false
   readonly property color barForeground: bar ? bar.foreground : Color.foreground
+  // Cloudflare orange, kept fixed so "on" reads the same on every theme.
+  readonly property color connectedColor: "#f38020"
 
   readonly property color stateColor: {
     if (Model.stateIsAlert(root.state)) return bar ? bar.urgent : Color.urgent
-    return root.connected ? root.barForeground : Qt.darker(root.barForeground, 1.55)
+    return root.connected ? root.connectedColor : Qt.darker(root.barForeground, 1.55)
   }
 
   readonly property string tooltip: {
@@ -47,8 +58,6 @@ BarWidget {
 
   // ── panel lifecycle (contract with the bar host) ───────────────────────
   readonly property bool opened: loader.item ? loader.item.opened === true : false
-  readonly property real openPanelIndicatorWidth: button.labelWidth
-  readonly property real openPanelIndicatorHeight: Math.max(Style.space(10), Math.round(Style.bar.iconSlot * 0.55))
   readonly property bool popoutSwitchClosing: loader.item ? loader.item.popoutSwitchClosing === true : false
 
   function closeForPopoutSwitch() {
@@ -73,6 +82,7 @@ BarWidget {
     if (!loader.item) return
     loader.item.bar = root.bar
     loader.item.settings = root.settings
+    loader.item.svc = root.svc
     loader.item.anchorItem = button
     loader.item.hostWidget = root
     if (root.svc && root.svc.settings !== root.settings) root.svc.settings = root.settings
@@ -96,16 +106,31 @@ BarWidget {
     }
   }
 
-  WidgetButton {
+  // Scriptable panel control, so a keybinding can open the same panel:
+  //   omarchy-shell danyakmallun.warp.ui open
+  IpcHandler {
+    target: "danyakmallun.warp.ui"
+    function open(): string { root.open(); return "ok" }
+    function close(): string { root.close(); return "ok" }
+    function toggle(): string { root.togglePanel(); return "ok" }
+  }
+  // Cloud glyph + wordmark: the icon reads the tunnel state at a glance, the
+  // label keeps it unmistakably WARP beside the other bar icons. Cloudflare
+  // orange is a fixed accent when on; every other state follows the theme.
+  BarIconButton {
     id: button
-    anchors.fill: parent
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    anchors.horizontalCenter: parent.horizontalCenter
     bar: root.bar
+    slotSize: Style.bar.iconSlot * 2.4
     text: Model.stateGlyph(root.state)
+    labelText: "warp"
     tooltipText: root.tooltip
     foreground: root.stateColor
-    fontSize: Style.bar.iconFont
-    horizontalMargin: 5
-    verticalPadding: 5
+    active: root.connected
+    activeColor: root.connectedColor
+    dimmed: root.spinning
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.RightButton) {
         if (root.svc) root.svc.toggle()
@@ -114,21 +139,6 @@ BarWidget {
       } else {
         root.togglePanel()
       }
-    }
-
-    // Activity spin. Imperative animation (target/property) rather than
-    // `NumberAnimation on textRotation` so the angle can be parked back at 0
-    // when the spin ends — a value source would keep the glyph mid-rotation.
-    NumberAnimation {
-      id: spinAnim
-      target: button
-      property: "textRotation"
-      from: 0
-      to: 360
-      duration: 1200
-      loops: Animation.Infinite
-      running: root.spinning
-      onStopped: button.textRotation = 0
     }
   }
 }

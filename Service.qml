@@ -10,8 +10,7 @@ import "Model.js" as Model
 // Everything here is a thin normalisation of three read-only probes —
 // `status`, `settings list`, `registration show` — plus the write actions
 // (connect, disconnect, mode, registration new). warp-cli talks to warp-svc
-// over /run/cloudflare-warp/warp_service, which is world-writable on this
-// machine, so no elevation path is involved anywhere.
+// over a local socket, so no elevation path is involved anywhere.
 Item {
   id: root
 
@@ -225,7 +224,13 @@ Item {
       protocol: protocol,
       alwaysOn: alwaysOn,
       switchLocked: switchLocked,
-      error: errorText
+      error: errorText,
+      accountText: accountText,
+      deviceText: deviceText,
+      detailText: detailText,
+      disableForWifi: disableForWifi,
+      disableForEthernet: disableForEthernet,
+      refreshing: refreshing
     }
   }
 
@@ -410,6 +415,14 @@ Item {
     }
     function toggle(): string {
       return root.toggle() ? "ok" : "ignored"
+    }
+    function setMode(value: string): string {
+      root.setMode(value)
+      return "ok"
+    }
+    function registerDevice(): string {
+      root.registerDevice()
+      return "ok"
     }
     function mode(): string {
       return root.mode

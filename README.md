@@ -1,80 +1,129 @@
-# Cloudflare WARP — Omarchy shell plugin
+# Cloudflare WARP — Omarchy Shell Plugin
 
-Bar indicator + control panel for `warp-cli` on Omarchy (`quickshell`). Shows the current WARP state as a color-coded glyph in the bar and exposes connect/disconnect, operating mode, and account facts in a panel. No `sudo`/polkit — `warp-cli` talks to `warp-svc` over `/run/cloudflare-warp/warp_service` (`srwxrwxrwx`, world-writable on this machine).
+A bar indicator and control panel for `warp-cli` on Omarchy. The bar shows a
+state glyph plus the `warp` wordmark: orange while the tunnel is up, dimmed while
+off, urgent on errors, and breathing during a transition. The panel offers
+connect/disconnect, grouped operating modes, tunnel health, and account details.
 
-Companion: `~/.omp/agent/extensions/warp.ts` gives the same control to the `omp` agent (`warp_status`, `warp_connect`, `warp_disconnect`, `warp_toggle`, `warp_mode`, plus `/warp …`).
-
-## Layout
-
-```
-Service.qml   single poll engine (`warp-cli status` is the only mandatory probe;
-              `settings list` @ 60 s, `registration show` @ 300 s, forced on
-              panel open / refresh / after any write action)
-BarWidget.qml color/glyph + tooltip, left-click = panel, right-click = toggle,
-              middle-click = refresh
-Panel.qml     KeyboardPanel + ScrollView: hero (status + ToggleSwitch), notice,
-              SESSION (protocol / always-on / switch-lock / paused-on),
-              OPERATING MODE (GridLayout 2-col), ACCOUNT (plan + device),
-              actions (Refresh, Register device)
-Model.js      pure parsers/labels shared by all three QML files
-```
-
-All JSON parsing goes through `Model.js` (`parseJson`, `parseStatus`, `parseSettings`, `parseRegistration`). `registration show` also returns `account.license` + `public_key`; this plugin never reads them — `parseRegistration` copies only `device_id`, `account.type`, `managed`.
+No `sudo` or polkit is involved: `warp-cli` talks to `warp-svc` over its local
+socket. Polling is read-only; only explicit actions write state.
 
 ## Requirements
 
-* `warp-cli` in `PATH` (`cloudflare-warp-bin` on Arch, provides `warp-cli` `2026.7.1377+`). Falls back to `unavailable` if `which warp-cli` fails. `warp-svc` must be reachable; otherwise `daemon-down`.
-* JetBrainsMono Nerd Font (the bar's `monospace` alias on this install). Glyphs were verified present in that build (check with `fc-match monospace`):
-  * `󰅟` `U+F015F` `nf-md-cloud_check` — connected
-  * `󰅣` `U+F0163` `nf-md-cloud_off_outline` — disconnected
-  * `󰑐` `U+F0450` `nf-md-cloud_sync` — connecting / reconnecting / disconnecting
-  * `󰅤` `U+F0164` — registration-missing
-  * `󰧠` `U+F09E0` `nf-md-cloud_alert` — daemon-down / notice glyph
+- Omarchy with the Quickshell-based shell (`omarchy-shell`).
+- `warp-cli` in `PATH` (`cloudflare-warp-bin` on Arch). The widget reports
+  `warp-cli not found` when missing, and `warp-svc unavailable` when the daemon
+  is down.
+- A Nerd Font in the bar font for the status glyphs, for example
+  JetBrainsMono Nerd Font. The glyphs used are:
+  - `󰅟` `U+F015F` `nf-md-cloud_check` — connected
+  - `󰅣` `U+F0163` `nf-md-cloud_off_outline` — disconnected
+  - `󰑐` `U+F0450` `nf-md-cloud_sync` — connecting / reconnecting / disconnecting
+  - `󰅤` `U+F0164` — registration missing
+  - `󰧠` `U+F09E0` `nf-md-cloud_alert` — daemon down / notice
 
-Glyph source: [Nerd Fonts](https://www.nerdfonts.com/cheat-sheet) / Material Design Icons.
+  Glyph source: [Nerd Fonts cheat sheet](https://www.nerdfonts.com/cheat-sheet).
+
+## Install
+
+```bash
+omarchy plugin add https://github.com/danyakmallun9999/omarchy-warp.git --enable --yes
+```
+
+To place it next to the network widget:
+
+```bash
+omarchy plugin enable danyakmallun.warp --after omarchy.network
+```
+
+To remove it:
+
+```bash
+omarchy plugin remove danyakmallun.warp --yes
+```
+
+The shell hot-reloads plugin files on save; no `omarchy refresh` is needed.
+
+## Controls
+
+- **Left click**: open / close the panel.
+- **Right click**: toggle the tunnel.
+- **Middle click**: force a re-read.
+- **Inside the panel**: `Enter` toggles the tunnel, `R` refreshes, `Tab` switches
+  to a neighbouring bar panel, `Esc` closes.
+
+To get a keyboard shortcut, add a Hyprland binding in `~/.config/hypr/bindings.lua`:
+
+```lua
+o.bind("SUPER + SHIFT + W", "WARP panel", "omarchy-shell danyakmallun.warp.ui toggle")
+```
 
 ## IPC
 
-Service mounts `IpcHandler { target: "danyakmallun.warp" }`:
-
-```
-omarchy-shell danyakmallun.warp status      # JSON (publicState() + probed/installed/daemonUp)
-omarchy-shell danyakmallun.warp refresh     # force re-read (returns JSON, also refreshes details)
+```bash
+omarchy-shell danyakmallun.warp status
+omarchy-shell danyakmallun.warp refresh
 omarchy-shell danyakmallun.warp connect
 omarchy-shell danyakmallun.warp disconnect
 omarchy-shell danyakmallun.warp toggle
 omarchy-shell danyakmallun.warp mode <warp|warp+doh|warp+dot|tunnel_only|doh|dot|proxy>
+omarchy-shell danyakmallun.warp registerDevice
 ```
 
-`status` is also the shape returned by the other verbs after they settle. `mode` sanitises through `Model.sanitizeMode`, so arbitrary strings never reach `warp-cli mode`.
+`status` prints JSON with the tunnel state, operating mode, protocol, and
+settings. `mode` is validated against a fixed list, so arbitrary strings never
+reach `warp-cli mode`.
+
+A second target drives the panel UI:
+
+```bash
+omarchy-shell danyakmallun.warp.ui open
+omarchy-shell danyakmallun.warp.ui close
+omarchy-shell danyakmallun.warp.ui toggle
+```
 
 ## Settings
 
-`~/.config/omarchy/shell.json` → `bar.layout.right[]` entry for this widget:
+The widget entry in `~/.config/omarchy/shell.json` accepts one setting:
 
 ```json
 {"id":"danyakmallun.warp","refreshIntervalSec":10}
 ```
 
-* `refreshIntervalSec` integer `2`–`3600`, default `10`. Poll period for `warp-cli -j status` (transitional states poll at 1 s regardless, via a short-circuit timer; the watchdog is 20 s). `shell.json` is authoritative once customized — no deep-merge — so edit it without dropping sibling keys.
+`refreshIntervalSec` is an integer from `2` to `3600` (default `10`). Transitional
+states are polled once a second regardless. `shell.json` is authoritative once
+customized — no deep merge — so edit it without dropping sibling keys.
 
-Third-party enablement is `plugin id in bar.layout.<section>` for bar-widgets and `plugins[]` for other kinds; `keepLoaded: true` keeps the `service` alive even when no bar instance is mounted.
+`keepLoaded: true` in the manifest keeps the service alive even when no bar
+instance is mounted.
 
-Enable/placement:
+## Layout
 
-```sh
-omarchy plugin enable danyakmallun.warp --after omarchy.network
-# bar position is transparent/hot-reload; no omarchy refresh needed
+```
+Service.qml   Single poll/action engine around warp-cli; read probes for status,
+              settings, and registration, plus write actions
+BarState.qml  Service facade over the plugin's own IPC, so the widget also works
+              on a replacement bar where bar.shell.serviceFor() is unavailable
+BarWidget.qml Glyph, wordmark, tooltip, click routing, and panel IPC target
+Panel.qml     KeyboardPanel: hero with toggle, notices, session facts, grouped
+              operating modes, account details, and actions
+Model.js      Pure parsers, sanitizers, and labels shared by all QML files
 ```
 
-Variant QMLs that strip weightless code are preferred over keeping needless abstractions; `Panel.qml` uses `RowLayout` + `Layout.fillWidth` for its notice/action rows rather than `parent.children[i]` arithmetic.
+All dynamic text is plain text. JSON parsing happens only in `Model.js`;
+`registration show` also returns the account license and device public key, but
+the plugin never reads them.
 
 ## Troubleshooting
 
-* Tooltip looks one line only: the bar's `PopupWindow` + `Text` has no `wrapMode` — keep tooltips short, one logical line. The bar widget already builds a multi-line tooltip; the panel is the readable surface.
-* Click does nothing / panel never opens: QML load failed — check `journalctl --user -b --no-pager | grep omarchy-shell` for `QML` errors. Third-party panels fail silently otherwise.
-* `warp-cli -j settings list` lag: by design (60 s cache). `Refresh` or panel open force it.
-* License/public key in logs? Should never happen — file a bug if you see `license` or `public_key` in any tool result or `journalctl` line from this plugin.
+- **Panel does not open:** check `journalctl --user -b --no-pager | grep omarchy-shell`
+  for QML load errors.
+- **Tooltip looks short:** the bar's tooltip has no wrapping; use the panel for
+  the full detail.
+- **Settings lag:** `warp-cli -j settings list` is cached for 60 s; opening the
+  panel or pressing Refresh forces an update.
+- **Not registered:** press `Register device` in the panel (accepts the Cloudflare
+  ToS non-interactively).
 
 ## License
 

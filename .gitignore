@@ -1,2 +1,5 @@
 # Omarchy / Quickshell caches
 *.log
+
+# Local edit backups
+*.bak*

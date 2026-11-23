@@ -59,9 +59,22 @@ function statusLabel(kind) {
 // "Manual Disconnection".
 function reasonLabel(reason) {
   var key = collapse(reason).toLowerCase()
-  if (key === "") return ""
+  if (key === "" || key === "none") return ""
   if (key === "manual") return "manual disconnect"
+  if (key === "networkhealthy") return "network healthy"
   return key
+}
+
+// Short health line for the panel's session section. "Healthy" on a live
+// tunnel, "Unavailable" when the daemon itself is down, otherwise blank.
+function healthText(state, reason) {
+  var key = collapse(reason).toLowerCase().replace(/[\s_-]+/g, "")
+  if (state === "connected") {
+    if (key === "" || key === "none" || key === "networkhealthy") return "Healthy"
+    return "Degraded · " + reasonLabel(reason)
+  }
+  if (state === "daemon-down" || state === "unavailable") return "Unavailable"
+  return ""
 }
 
 // {"status":"Disconnected","reason":"Manual"}
@@ -129,6 +142,25 @@ function modeOptions() {
   ]
 }
 
+// Two groups keep the long CLI list scannable: real tunnels first, DNS-only
+// fallbacks behind a second header. Values stay exactly as warp-cli expects.
+function modeGroups() {
+  var all = modeOptions()
+  function pick(values) {
+    var out = []
+    for (var i = 0; i < all.length; i++) {
+      if (values.indexOf(all[i].value) !== -1) {
+        out.push({ value: all[i].value, label: all[i].label, tooltip: all[i].hint })
+      }
+    }
+    return out
+  }
+  return [
+    { title: "TUNNEL MODES", options: pick(["warp", "warp+doh", "warp+dot", "tunnel_only"]) },
+    { title: "DNS ONLY", options: pick(["doh", "dot", "proxy"]) }
+  ]
+}
+
 function modeEntry(mode) {
   var value = collapse(mode)
   var options = modeOptions()
@@ -180,8 +212,8 @@ function deviceLabel(deviceId) {
   return value.length > 8 ? value.substring(0, 8) : value
 }
 
-// Glyphs are Nerd Font (nf-md-*, Material Design Icons) and were verified
-// present in this machine's bar font, JetBrainsMono Nerd Font.
+// Glyphs are Nerd Font (nf-md-*, Material Design Icons); a Nerd Font must be
+// installed for them to render.
 function stateGlyph(state) {
   if (state === "connected") return "󰅟"            // nf-md-cloud
   if (state === "disconnected") return "󰅣"         // nf-md-cloud_outline
@@ -195,4 +227,9 @@ function stateGlyph(state) {
 // purpose". The bar paints these with the theme's urgent color.
 function stateIsAlert(state) {
   return state === "daemon-down" || state === "unavailable" || state === "registration-missing"
+}
+
+// Short-lived states where a breathing glyph tells the user a click landed.
+function stateIsTransitional(state) {
+  return state === "connecting" || state === "reconnecting" || state === "disconnecting"
 }
