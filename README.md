@@ -5,10 +5,11 @@ state glyph plus the `warp` wordmark: orange while the tunnel is up, dimmed whil
 off, urgent on errors, and breathing during a transition. The panel offers
 connect/disconnect, grouped operating modes, tunnel health, and account details.
 
-No `sudo` or polkit is involved: `warp-cli` talks to `warp-svc` over its local
-socket. Polling is read-only; only explicit actions write state. Connect and
-disconnect are always sent as explicit intents, so a status snapshot that lags
-the tunnel can never turn a "connect" click into a disconnect.
+The plugin runs unprivileged: `warp-cli` talks to `warp-svc` over its local
+socket and no root helper is used. Polling is read-only; only explicit actions
+write state. Connect and disconnect are always sent as explicit intents, so a
+status snapshot that lags the tunnel can never turn a "connect" click into a
+disconnect.
 
 ## Requirements
 
