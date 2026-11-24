@@ -144,7 +144,13 @@ Panel {
       anchors.fill: parent
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
-      onActivateRequested: if (root.svc && root.canAct && !root.busy) root.svc.toggle()
+      onActivateRequested: {
+        if (!root.svc || !root.canAct || root.busy) return
+        // Act on the state shown to the user; never let a stale snapshot turn
+        // an intended connect into a disconnect.
+        if (root.svc.active) root.svc.disconnect()
+        else root.svc.connect()
+      }
       onTextKey: function(key) { if (key === "r" && root.svc) root.svc.refresh(true) }
 
       ScrollView {
@@ -228,11 +234,18 @@ Panel {
                   busy: root.busy || !root.canAct
                   foreground: root.foreground
                   Layout.alignment: Qt.AlignVCenter
-                  onToggled: if (root.svc && root.canAct) root.svc.toggle()
+                  onToggled: {
+                    if (!root.svc || !root.canAct) return
+                    // ToggleSwitch emits `toggled()` without flipping
+                    // `checked`; the caller owns that value. So `checked` here
+                    // is still the displayed state: flip it explicitly.
+                    if (powerSwitch.checked) root.svc.disconnect()
+                    else root.svc.connect()
+                  }
 
                   PanelToolTip {
                     visible: powerSwitch.containsMouse
-                    text: root.svc && root.svc.active ? "Disconnect WARP" : "Connect WARP"
+                    text: powerSwitch.checked ? "Disconnect WARP" : "Connect WARP"
                     fontFamily: root.fontFamily
                   }
                 }

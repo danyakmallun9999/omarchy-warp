@@ -6,7 +6,9 @@ off, urgent on errors, and breathing during a transition. The panel offers
 connect/disconnect, grouped operating modes, tunnel health, and account details.
 
 No `sudo` or polkit is involved: `warp-cli` talks to `warp-svc` over its local
-socket. Polling is read-only; only explicit actions write state.
+socket. Polling is read-only; only explicit actions write state. Connect and
+disconnect are always sent as explicit intents, so a status snapshot that lags
+the tunnel can never turn a "connect" click into a disconnect.
 
 ## Requirements
 
@@ -47,10 +49,12 @@ The shell hot-reloads plugin files on save; no `omarchy refresh` is needed.
 ## Controls
 
 - **Left click**: open / close the panel.
-- **Right click**: toggle the tunnel.
+- **Right click**: connect or disconnect according to the displayed state
+  (explicit intent, not a context-free flip).
 - **Middle click**: force a re-read.
-- **Inside the panel**: `Enter` toggles the tunnel, `R` refreshes, `Tab` switches
-  to a neighbouring bar panel, `Esc` closes.
+- **Inside the panel**: the switch and `Enter` connect or disconnect according
+  to the displayed state, `R` refreshes, `Tab` switches to a neighbouring bar
+  panel, `Esc` closes.
 
 To get a keyboard shortcut, add a Hyprland binding in `~/.config/hypr/bindings.lua`:
 
@@ -71,7 +75,9 @@ omarchy-shell danyakmallun.warp registerDevice
 ```
 
 `status` prints JSON with the tunnel state, operating mode, protocol, and
-settings. `mode` is validated against a fixed list, so arbitrary strings never
+settings. `connect` and `disconnect` are idempotent explicit intents. `toggle`
+forces a fresh status read before deciding, so it does not act on a stale
+snapshot. `mode` is validated against a fixed list, so arbitrary strings never
 reach `warp-cli mode`.
 
 A second target drives the panel UI:

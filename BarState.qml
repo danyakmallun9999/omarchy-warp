@@ -35,6 +35,10 @@ Item {
   readonly property string mode: String(stateData.mode || "")
 
   function refresh(force) { refreshing = true; if (!poll.running) poll.running = true }
+  // Explicit intents: a UI click must say *what* it wants, not ask the service
+  // to flip a state that may have changed since this snapshot was taken.
+  function connect() { act("connect") }
+  function disconnect() { act("disconnect") }
   function toggle() { act("toggle") }
   function setMode(value) { act("setMode", String(value || "")) }
   function registerDevice() { act("registerDevice") }

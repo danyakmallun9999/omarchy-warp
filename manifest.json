@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "danyakmallun.warp",
   "name": "Cloudflare WARP",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "danyakmallun",
   "license": "MIT",
   "description": "Cloudflare WARP status and control: color-coded bar indicator plus a panel with connect/disconnect, operating mode, and account details.",

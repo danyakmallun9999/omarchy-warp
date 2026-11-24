@@ -133,7 +133,11 @@ BarWidget {
     dimmed: root.spinning
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.RightButton) {
-        if (root.svc) root.svc.toggle()
+        if (!root.svc) return
+        // Same explicit intent as the panel: act on what is displayed, so an
+        // outdated snapshot can never disconnect an already active tunnel.
+        if (root.connected) root.svc.disconnect()
+        else root.svc.connect()
       } else if (mouseButton === Qt.MiddleButton) {
         if (root.svc) root.svc.refresh(true)
       } else {

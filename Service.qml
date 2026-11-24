@@ -58,6 +58,10 @@ Item {
   // Cleared as soon as the reported status matches.
   property int _desired: -1
 
+  // A toggle must decide from a fresh read, never from a snapshot that can be
+  // up to refreshIntervalSec old. The action is deferred until that read lands.
+  property bool _togglePending: false
+
   readonly property bool connected: kind === "connected"
   readonly property bool transitional: kind === "connecting" || kind === "reconnecting" || kind === "disconnecting"
   readonly property bool active: _desired === -1 ? connected : _desired === 1
@@ -183,7 +187,20 @@ Item {
   }
 
   function toggle() {
-    return active ? disconnect() : connect()
+    if (actionProcess.running || _togglePending || !installed || !daemonUp) return false
+    // `active` may lag behind another control (IPC, keybinding, or a direct
+    // warp-cli call). Refresh first, then act on the reported state so a
+    // toggle never disconnects a tunnel the caller believed was down.
+    _togglePending = true
+    refresh(true)
+    return true
+  }
+
+  function resolvePendingToggle() {
+    if (!_togglePending) return
+    _togglePending = false
+    if (connected) disconnect()
+    else connect()
   }
 
   function setMode(value) {
@@ -269,12 +286,14 @@ Item {
       if (exitCode !== 0) {
         root.daemonUp = false
         root._desired = -1
+        root._togglePending = false
         root.lastError = Model.parseError(err !== "" ? err : out) || "warp-cli status failed"
         return
       }
       var parsed = Model.parseStatus(out)
       if (!parsed.ok) {
         root.daemonUp = false
+        root._togglePending = false
         root.lastError = parsed.error || "Unreadable status output"
         return
       }
@@ -285,6 +304,7 @@ Item {
       root.reason = parsed.reason
       root.syncedAtMs = Date.now()
       if (root._desired !== -1 && (parsed.kind === "connected") === (root._desired === 1)) root._desired = -1
+      root.resolvePendingToggle()
       root.refreshDetails()
     }
   }
